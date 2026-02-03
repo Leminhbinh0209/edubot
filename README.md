@@ -10,7 +10,7 @@ This guide walks you through building a small bot AI assistant step-by-step, in 
 - Maintain conversation history
 - Use LLM providers for reasoning
 
-**Timeline**: ~2-3 weeks for a basic version, ~1-2 months for full feature set
+**Timeline**: 1 days for a basic version, ~1-2 weeks for full feature set
 
 ---
 
