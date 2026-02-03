@@ -1,18 +1,16 @@
-# Building Small bot with LLM from Scratch: Implementation Guide
+# Building AI Assistant from Scratch: Implementation Guide
 
-This guide walks you through building a small bot AI assistant step-by-step, in the correct order.
+Build a lightweight AI assistant with tool calling, session management, and CLI interface in 5 phases.
 
 ## 🎯 Overview
 
-**Goal**: Build a lightweight AI assistant that can:
+**Goal**: Build an AI assistant that can:
 - Chat with users via CLI
 - Execute tools (read files, run commands)
 - Maintain conversation history
 - Use LLM providers for reasoning
 
-**Timeline**: 1 days for a basic version, ~1-2 weeks for full feature set
-
----
+**Timeline**: 1 day for basic version, ~1-2 weeks for full feature set
 
 ## 📋 Prerequisites
 
@@ -21,48 +19,29 @@ This guide walks you through building a small bot AI assistant step-by-step, in 
 - Understanding of LLM APIs
 - Familiarity with type hints
 
----
+## 🏗️ Architecture
 
-## 🏗️ Implementation Phases
-
-### Phase 0: Setup & Planning
-
-**Goal**: Set up project structure and understand requirements
-
-**Tasks**:
-1. Create project structure
-2. Plan architecture
-
-**Project Structure**:
 ```
 edubot/
 ├── mybot/
-│   ├── __init__.py
-│   ├── agent/
-│   ├── providers/
-│   ├── tools/
-│   └── session/
+│   ├── agent/      # Orchestrates everything
+│   ├── providers/  # LLM API connections
+│   ├── tools/      # Extensible tool system
+│   └── session/    # Conversation memory
 ├── tests/
-├── pyproject.toml
 └── README.md
 ```
 
-**Deliverable**: Project skeleton ready
-
-
 ---
 
-### Phase 1: Core Data Models
+## Phase 1: Core Data Models
 
-**Goal**: Define the basic data structures
+**Why First**: Everything else depends on these foundational structures.
 
-**Why First**: Everything else depends on these
+<details>
+<summary><b>Click to expand: Implementation</b></summary>
 
-**Files to Create**:
-1. `mybot/models.py` - Core data models
-2. `mybot/exceptions.py` - Custom exceptions
-
-**Implementation**:
+**Files**: `mybot/models.py`, `mybot/exceptions.py`
 
 ```python
 # mybot/models.py
@@ -72,7 +51,6 @@ from typing import Any
 
 @dataclass
 class Message:
-    """A conversation message."""
     role: str  # "user", "assistant", "system", "tool"
     content: str
     timestamp: datetime = None
@@ -83,14 +61,12 @@ class Message:
 
 @dataclass
 class ToolCall:
-    """A tool call request."""
     id: str
     name: str
     args: dict[str, Any]
 
 @dataclass
 class LLMResponse:
-    """Response from LLM."""
     content: str | None
     tool_calls: list[ToolCall] = None
     finish_reason: str = "stop"
@@ -99,7 +75,6 @@ class LLMResponse:
         if self.tool_calls is None:
             self.tool_calls = []
     
-    @property
     def has_tool_calls(self) -> bool:
         return len(self.tool_calls) > 0
 ```
@@ -107,19 +82,20 @@ class LLMResponse:
 ```python
 # mybot/exceptions.py
 class BotException(Exception):
-    """Base exception."""
     pass
 
 class LLMError(BotException):
-    """LLM provider error."""
     pass
 
 class ToolError(BotException):
-    """Tool execution error."""
     pass
 ```
 
-**Test**:
+</details>
+
+<details>
+<summary><b>Click to expand: Test</b></summary>
+
 ```python
 # tests/test_models.py
 def test_message_creation():
@@ -128,24 +104,20 @@ def test_message_creation():
     assert msg.timestamp is not None
 ```
 
-**Deliverable**: Core models defined and tested
+</details>
 
 ---
 
-### Phase 2: LLM Provider
+## Phase 2: LLM Provider
 
-**Goal**: Connect to an LLM API
+**Why Second**: Agent needs LLM intelligence to function.
 
-**Why Second**: Agent needs LLM to function
+**Important**: Use **dict-based messages**, not Message objects: `list[dict[str, Any]]` where each dict has `{"role": "user", "content": "..."}`.
 
-**Files to Create**:
-1. `mybot/providers/base.py` - Abstract interface
-2. `mybot/providers/openrouter_provider.py` - OpenRouter implementation (recommended)
-   OR `mybot/providers/openai_provider.py` - OpenAI implementation
+<details>
+<summary><b>Click to expand: Implementation</b></summary>
 
-**Important**: nanobot uses **dict-based messages**, not Message objects. Messages are `list[dict[str, Any]]` where each dict has `{"role": "user", "content": "..."}`.
-
-**Implementation**:
+**Files**: `mybot/providers/base.py`, `mybot/providers/openrouter_provider.py`
 
 ```python
 # mybot/providers/base.py
@@ -157,17 +129,10 @@ class LLMProvider(ABC):
     @abstractmethod
     async def chat(
         self,
-        messages: list[dict[str, Any]],  # Note: dicts, not Message objects!
+        messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         model: str | None = None,
     ) -> LLMResponse:
-        """Send chat completion request.
-        
-        Args:
-            messages: List of message dicts with 'role' and 'content' keys.
-            tools: Optional list of tool definitions in OpenAI format.
-            model: Model identifier.
-        """
         pass
 ```
 
@@ -180,31 +145,19 @@ from mybot.providers.base import LLMProvider
 from mybot.models import LLMResponse, ToolCall
 
 class OpenRouterProvider(LLMProvider):
-    """Provider using OpenRouter API (supports many models including free ones)."""
-    
     def __init__(self, api_key: str, base_url: str = "https://openrouter.ai/api/v1"):
         self.api_key = api_key
-        self.base_url = base_url
         self.client = httpx.AsyncClient(
             base_url=base_url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "HTTP-Referer": "https://github.com/yourusername/mybot",  # Optional
-            }
+            headers={"Authorization": f"Bearer {api_key}"}
         )
     
-    async def chat(
-        self,
-        messages: list[dict[str, Any]],  # Already in dict format!
-        tools: list[dict[str, Any]] | None = None,
-        model: str = "nvidia/nemotron-3-nano-30b-a3b:free",  # Free model
-    ) -> LLMResponse:
+    async def chat(self, messages, tools=None, model=None) -> LLMResponse:
         payload = {
-            "model": model,
-            "messages": messages,  # Use directly, no conversion needed
+            "model": model or "nvidia/nemotron-3-nano-30b-a3b:free",
+            "messages": messages,
             "temperature": 0.7,
         }
-        
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
@@ -213,7 +166,6 @@ class OpenRouterProvider(LLMProvider):
         response.raise_for_status()
         data = response.json()
         
-        # Parse response
         choice = data["choices"][0]
         message = choice["message"]
         
@@ -221,7 +173,6 @@ class OpenRouterProvider(LLMProvider):
         if "tool_calls" in message and message["tool_calls"]:
             for tc in message["tool_calls"]:
                 args = tc["function"]["arguments"]
-                # Arguments come as JSON string, parse if needed
                 if isinstance(args, str):
                     try:
                         args = json.loads(args)
@@ -231,7 +182,7 @@ class OpenRouterProvider(LLMProvider):
                 tool_calls.append(ToolCall(
                     id=tc["id"],
                     name=tc["function"]["name"],
-                    arguments=args
+                    args=args
                 ))
         
         return LLMResponse(
@@ -241,84 +192,56 @@ class OpenRouterProvider(LLMProvider):
         )
 ```
 
-**Test**:
+</details>
+
+<details>
+<summary><b>Click to expand: Setup & Test</b></summary>
 
 1. **Set up API Key**:
-   
-   Create a `.env` file in the project root directory:
    ```bash
    # Create .env file
-   touch .env
+   echo "OPENROUTER_API_KEY=sk-or-v1-your-api-key-here" > .env
    ```
-   
-   Add your OpenRouter API key to the `.env` file:
-   ```bash
-   OPENROUTER_API_KEY=sk-or-v1-your-api-key-here
-   ```
-   
-   **Note**: 
-   - Get your API key from https://openrouter.ai/keys
-   - API keys start with `sk-or-v1-`
-   - You can use quotes or no quotes: both formats work
-   - The `.env` file should be in the project root (same directory as `pyproject.toml`)
+   Get your API key from [openrouter.ai/keys](https://openrouter.ai/keys)
 
 2. **Install Dependencies**:
-   
-   Make sure you have `python-dotenv` installed to load the `.env` file:
    ```bash
-   pip install python-dotenv
+   pip install python-dotenv httpx
    ```
 
-3. **Run the Test**:
-   
+3. **Run Test**:
    ```bash
-   # Activate your conda environment (if using conda)
-   conda activate vis-py311
-   
-   # Run the provider test
    python tests/test_provider.py
    ```
-   
-   The test will:
-   - Test basic chat functionality with a free model
-   - Test tool calling functionality
-   - Print responses and tool calls for verification
-   
-   **Expected Output**:
-   ```
-   Testing OpenRouter basic chat...
-   Response: Hello, World!
-   ✓ Test passed
-   
-   Testing OpenRouter with tools...
-   Tool call: get_weather with args: {'location': 'San Francisco, CA'}
-   ✓ Test passed
-   
-   All tests passed!
-   ```
 
-4. **Troubleshooting**:
-   
-   - **404 Error**: Model not found - check that the model name is correct
-   - **401/403 Error**: Authentication failed - verify your API key is correct
-   - **402 Error**: Insufficient credits - some models require API credits
-   - **ModuleNotFoundError**: Make sure you're running from the project root and dependencies are installed
+**Expected Output**:
+```
+Testing OpenRouter basic chat...
+Response: Hello, World!
+✓ Test passed
+
+Testing OpenRouter with tools...
+Tool call: get_weather with args: {'location': 'San Francisco, CA'}
+✓ Test passed
+```
+
+**Troubleshooting**:
+- **404 Error**: Model not found - check model name
+- **401/403 Error**: Authentication failed - verify API key
+- **402 Error**: Insufficient credits - some models require credits
+
+</details>
 
 ---
 
-### Phase 3: Tool System
+## Phase 3: Tool System
 
-**Goal**: Create extensible tool system
+**Why Third**: Agent needs tools to interact with the environment.
 
-**Why Third**: Agent needs tools to interact with environment
+<details>
+<summary><b>Click to expand: Implementation</b></summary>
 
-**Files to Create**:
-1. `mybot/tools/base.py` - Tool interface
-2. `mybot/tools/registry.py` - Tool registry
-3. `mybot/tools/filesystem.py` - File tools
-4. `mybot/tools/shell.py` - Shell tool
-
-**Implementation**:
+**Files**: `mybot/tools/base.py`, `mybot/tools/registry.py`, `mybot/tools/filesystem.py`, `mybot/tools/shell.py`
 
 ```python
 # mybot/tools/base.py
@@ -339,7 +262,6 @@ class Tool(ABC):
     @property
     @abstractmethod
     def parameters(self) -> dict[str, Any]:
-        """JSON Schema for parameters."""
         pass
     
     @abstractmethod
@@ -369,9 +291,6 @@ class ToolRegistry:
     def register(self, tool: Tool) -> None:
         self._tools[tool.name] = tool
     
-    def get(self, name: str) -> Tool | None:
-        return self._tools.get(name)
-    
     def get_definitions(self) -> list[dict[str, Any]]:
         return [tool.to_schema() for tool in self._tools.values()]
     
@@ -379,7 +298,6 @@ class ToolRegistry:
         tool = self._tools.get(name)
         if not tool:
             return f"Error: Tool '{name}' not found"
-        
         try:
             return await tool.execute(**params)
         except Exception as e:
@@ -405,10 +323,7 @@ class ReadFileTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the file"
-                }
+                "path": {"type": "string", "description": "Path to the file"}
             },
             "required": ["path"]
         }
@@ -417,24 +332,17 @@ class ReadFileTool(Tool):
         file_path = Path(path)
         if not file_path.exists():
             return f"Error: File not found: {path}"
-        
-        try:
-            return file_path.read_text(encoding="utf-8")
-        except Exception as e:
-            return f"Error reading file: {str(e)}"
+        return file_path.read_text(encoding="utf-8")
 ```
+
 ```python
 # mybot/tools/shell.py
-
 import asyncio
 import os
 from typing import Any
 from mybot.tools.base import Tool
 
-
 class ExecTool(Tool):
-    """Tool to execute shell commands."""
-    
     def __init__(self, timeout: int = 60, working_dir: str | None = None):
         self.timeout = timeout
         self.working_dir = working_dir
@@ -452,21 +360,14 @@ class ExecTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "The shell command to execute"
-                },
-                "working_dir": {
-                    "type": "string",
-                    "description": "Optional working directory for the command"
-                }
+                "command": {"type": "string", "description": "The shell command to execute"},
+                "working_dir": {"type": "string", "description": "Optional working directory"}
             },
             "required": ["command"]
         }
     
     async def execute(self, command: str, working_dir: str | None = None, **kwargs: Any) -> str:
         cwd = working_dir or self.working_dir or os.getcwd()
-        
         try:
             process = await asyncio.create_subprocess_shell(
                 command,
@@ -474,90 +375,43 @@ class ExecTool(Tool):
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
             )
-            
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=self.timeout
-                )
-            except asyncio.TimeoutError:
-                process.kill()
-                return f"Error: Command timed out after {self.timeout} seconds"
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=self.timeout
+            )
             
             output_parts = []
-            
             if stdout:
                 output_parts.append(stdout.decode("utf-8", errors="replace"))
-            
             if stderr:
                 stderr_text = stderr.decode("utf-8", errors="replace")
                 if stderr_text.strip():
                     output_parts.append(f"STDERR:\n{stderr_text}")
-            
             if process.returncode != 0:
                 output_parts.append(f"\nExit code: {process.returncode}")
             
             result = "\n".join(output_parts) if output_parts else "(no output)"
-            
-            # Truncate very long output
-            max_len = 10000
-            if len(result) > max_len:
-                result = result[:max_len] + f"\n... (truncated, {len(result) - max_len} more chars)"
-            
-            return result
-            
+            return result[:10000] + ("\n... (truncated)" if len(result) > 10000 else "")
+        except asyncio.TimeoutError:
+            return f"Error: Command timed out after {self.timeout} seconds"
         except Exception as e:
             return f"Error executing command: {str(e)}"
 ```
 
-**Test**:
-```python
-# test/test_tools.py
-from mybot.tools.registry import ToolRegistry
-from mybot.tools.filesystem import ReadFileTool
-from mybot.tools.shell import ExecTool
-import asyncio
+</details>
 
-async def test_tool_registry():
-    registry = ToolRegistry()
-    registry.register(ReadFileTool())
-    registry.register(ExecTool())
-    assert registry.get("read_file") is not None
-    assert registry.get("exec") is not None
-    assert len(registry.get_definitions()) == 2
+---
 
+## Phase 4: Session Management
 
-async def test_read_file():
-    tool = ReadFileTool()
-    # Create test file
-    test_file = Path("/tmp/test.txt")
-    test_file.write_text("Hello, World!\nThis test file is for testing the read file tool.")
+**Why Fourth**: Agent needs context from previous messages.
 
-    result = await tool.execute(path=str(test_file))
-    print(result)
-    assert "Hello, World!" in result
-    print("✓ Test [read file] passed")
-async def test_exec():
-    tool = ExecTool()
-    result = await tool.execute(command="echo 'Hello, World!'")
-    print(result)
-    assert "Hello, World!" in result
-    print("✓ Test [exec] passed")
-```
+<details>
+<summary><b>Click to expand: Implementation</b></summary>
 
-### Phase 4: Session Management 
-
-**Goal**: Persist conversation history
-
-**Why Fourth**: Agent needs context from previous messages
-
-**Files to Create**:
-1. `mybot/session/manager.py` - Session management
-
-**Implementation**:
+**File**: `mybot/session/manager.py`
 
 ```python
-# mybot/session/manager.py
 import json
 from pathlib import Path
 from datetime import datetime
@@ -577,21 +431,22 @@ class Session:
             "timestamp": datetime.now().isoformat()
         })
         self.updated_at = datetime.now()
+    
     def get_history(self, max_messages: int = 50) -> list[dict[str, Any]]:
         recent = self.messages[-max_messages:] if len(self.messages) > max_messages else self.messages
-        return [
-            {"role": msg["role"], "content": msg["content"]}
-            for msg in recent
-        ]
+        return [{"role": msg["role"], "content": msg["content"]} for msg in recent]
+
 class SessionManager:
     def __init__(self, data_dir: Path):
         self.data_dir = data_dir
         self.sessions_dir = data_dir / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
         self._cache: dict[str, Session] = {}
+    
     def get_session_path(self, key: str) -> Path:
         safe_key = key.replace(":", "_").replace("/", "_")
         return self.sessions_dir / f"{safe_key}.json"
+    
     def get_or_create(self, key: str) -> Session:
         if key in self._cache:
             return self._cache[key]
@@ -611,6 +466,7 @@ class SessionManager:
         session = Session(key=key)
         self._cache[key] = session
         return session
+    
     def save(self, session: Session) -> None:
         path = self.get_session_path(session.key)
         data = {
@@ -624,39 +480,18 @@ class SessionManager:
         self._cache[session.key] = session
 ```
 
-**Test**:
-```python
-# tests/test_session.py
-import tempfile
-from pathlib import Path
-from mybot.session.manager import SessionManager
-
-def test_session_manager():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        manager = SessionManager(Path(tmpdir))
-        session = manager.get_or_create("test:123")
-        session.add_message("user", "Hello")
-        manager.save(session)
-        
-        # Reload
-        session2 = manager.get_or_create("test:123")
-        assert len(session2.messages) == 1
-```
-
-**Deliverable**: Sessions persist and load correctly
+</details>
 
 ---
 
-### Phase 5: Simple Agent Loop 
+## Phase 5: Agent Loop
 
-**Goal**: Basic agent that processes messages
+**Why Fifth**: Core functionality - brings everything together.
 
-**Why Fifth**: Core functionality - brings everything together
+<details>
+<summary><b>Click to expand: Implementation</b></summary>
 
-**Files to Create**:
-1. `mybot/agent/loop.py` - Main agent loop
-
-**Implementation**:
+**File**: `mybot/agent/loop.py`
 
 ```python
 import asyncio
@@ -664,7 +499,6 @@ from pathlib import Path
 from mybot.providers.base import LLMProvider
 from mybot.tools.registry import ToolRegistry
 from mybot.session.manager import SessionManager
-from mybot.models import Message
 
 class AgentLoop:
     def __init__(
@@ -673,7 +507,8 @@ class AgentLoop:
         model: str = "nvidia/nemotron-3-nano-30b-a3b:free",
         tools: ToolRegistry = None,
         sessions: SessionManager = None,
-        max_iterations: int = 10,):
+        max_iterations: int = 10,
+    ):
         if tools is None:
             tools = ToolRegistry()
         if sessions is None:
@@ -683,43 +518,29 @@ class AgentLoop:
         self.sessions = sessions
         self.max_iterations = max_iterations
         self.model = model
-    async def process_message(
-        self,
-        user_message: str,
-        session_key: str = "default",
-    ) -> str:
-        """Process a user message and return response."""
+    
+    async def process_message(self, user_message: str, session_key: str = "default") -> str:
         import json
         session = self.sessions.get_or_create(session_key)
         messages = []
         system_prompt = """You are a helpful AI assistant. You have access to tools.
         When you need to use a tool, call it. Otherwise, respond directly to the user."""
         messages.append({"role": "system", "content": system_prompt})
-        history = session.get_history()
-        messages.extend(history)
+        messages.extend(session.get_history())
         messages.append({"role": "user", "content": user_message})
+        
         iteration = 0
         final_response = None
-        print(f"\n[Agent Loop] Processing message: {user_message[:50]}...")
-        print(f"[Agent Loop] Session: {session_key}, Max iterations: {self.max_iterations}")
         
         while iteration < self.max_iterations:
             iteration += 1
-            # print(f"\n--- Iteration {iteration}/{self.max_iterations} ---")
-            # print(f"[LLM Request] Sending {len(messages)} messages to model: {self.model}")
-            # print(f"=== START Messages ===\n{json.dumps(messages, indent=2)}\n === END Messages ===")
             response = await self.provider.chat(
-                messages=messages, 
+                messages=messages,
                 tools=self.tools.get_definitions(),
                 model=self.model
             )
             
-            # print(f"[LLM Response] Content: {response.content[:100] if response.content else '(empty)'}...")
-            # print(f"[LLM Response] Has tool calls: {response.has_tool_calls()}")
-            # print(f"[LLM Response] Finish reason: {response.finish_reason}")
-            
             if response.has_tool_calls():
-                print(f"[Tool Calls] {len(response.tool_calls)} tool call(s) detected:")
                 tool_call_dicts = [
                     {
                         "id": tc.id,
@@ -731,110 +552,110 @@ class AgentLoop:
                     }
                     for tc in response.tool_calls
                 ]
-                
-                for i, tool_call in enumerate(response.tool_calls, 1):
-                    print(f"  [{i}] Tool: {tool_call.name}")
-                    print(f"      Args: {tool_call.args}")
-                
                 messages.append({
                     "role": "assistant",
                     "content": response.content or "",
                     "tool_calls": tool_call_dicts
                 })
                 
-                # print(f"[Tool Execution] Executing {len(response.tool_calls)} tool(s)...")
-                for i, tool_call in enumerate(response.tool_calls, 1):
-                    print(f"  [{i}] Executing: {tool_call.name}({tool_call.args})")
+                for tool_call in response.tool_calls:
                     result = await self.tools.execute(tool_call.name, tool_call.args)
-                    result_preview = result[:200] if len(result) > 200 else result
-                    print(f"      Result: {result_preview}{'...' if len(result) > 200 else ''}")
-                    
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "name": tool_call.name,
                         "content": result
                     })
-                # print(f"[Tool Execution] All tools executed, continuing loop...")
             else:
-                # print(f"[Final Response] No tool calls, returning response")
                 final_response = response.content
                 break
+        
         if final_response is None:
             final_response = "I'm having trouble processing that request."
+        
         session.add_message("user", user_message)
         session.add_message("assistant", final_response)
         self.sessions.save(session)
         return final_response
 ```
-**Test**:
+
+**Tip**: Uncomment print statements in the loop to see step-by-step execution.
+
+</details>
+
+<details>
+<summary><b>Click to expand: Test</b></summary>
+
 ```python
 # tests/test_agent.py
 async def test_agent_complex_task():
-    """Test agent with a complex multi-step task"""
-    print("\n=== Test 6: Complex Task ===")
     api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        raise ValueError("OPENROUTER_API_KEY not found in .env file")
-    
     provider = OpenRouterProvider(api_key=api_key)
     tools = ToolRegistry()
     tools.register(ReadFileTool())
     tools.register(ExecTool())
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Create a test file with numbers
         numbers_file = Path(tmpdir) / "numbers.txt"
         numbers_file.write_text("10\n20\n30\n40\n50")
         
         sessions = SessionManager(Path(tmpdir) / "sessions")
-        agent = AgentLoop(
-            provider,
-            model="nvidia/nemotron-3-nano-30b-a3b:free",
-            tools=tools,
-            sessions=sessions
-        )
+        agent = AgentLoop(provider, model="nvidia/nemotron-3-nano-30b-a3b:free", tools=tools, sessions=sessions)
         
-        # Ask agent to read file, calculate sum, and create a summary
         response = await agent.process_message(
             f"Read the file {numbers_file}, calculate the sum of all numbers, and tell me the result."
         )
-        print(f"Response: {response}")
         assert response is not None
-        assert len(response) > 0
-        print("✓ Complex task test passed")
 ```
-**Deliverable**: Basic agent working end-to-end
 
-**Explore:** Uncomment `print` from line 45-100 in `mybot/agent/loop.py` file to see how agent solve the task step by step.
-
+</details>
 
 ---
 
-### Phase 6: CLI Interface (Day 8-9)
+## Phase 6: CLI Interface
 
-**Goal**: Interactive command-line interface
+**Why Sixth**: Need a way to interact with the agent.
 
-**Why Sixth**: Need a way to interact with agent
+<details>
+<summary><b>Click to expand: Implementation</b></summary>
 
-**Files to Create**:
-1. `mybot/cli.py` - CLI interface
-
-**Implementation**:
+**File**: `mybot/cli.py`
 
 ```python
-# mybot/cli.py
+import asyncio
+from pathlib import Path
+from dotenv import load_dotenv
+import os
+from mybot.providers.openrouter_provider import OpenRouterProvider
+from mybot.tools.registry import ToolRegistry
+from mybot.tools.filesystem import ReadFileTool
+from mybot.tools.shell import ExecTool
+from mybot.session.manager import SessionManager
+from mybot.agent.loop import AgentLoop
+
+load_dotenv()
+
 async def main():
-    """Main CLI entry point."""
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        print("Error: OPENROUTER_API_KEY not found in .env file")
+        return
+    
     data_dir = Path.home() / ".mybot"
     data_dir.mkdir(exist_ok=True)
-    # Initialize components
+    
     provider = OpenRouterProvider(api_key=api_key)
     tools = ToolRegistry()
     tools.register(ReadFileTool())
     tools.register(ExecTool())
     sessions = SessionManager(data_dir)
-    agent = AgentLoop(provider, model="nvidia/nemotron-3-nano-30b-a3b:free", tools=tools, sessions=sessions)
+    agent = AgentLoop(
+        provider,
+        model="nvidia/nemotron-3-nano-30b-a3b:free",
+        tools=tools,
+        sessions=sessions
+    )
+    
     print("Agent ready! Type 'quit' to exit.\n")
     while True:
         user_input = input("You: ").strip()
@@ -846,13 +667,55 @@ async def main():
         response = await agent.process_message(user_input)
         print(response)
         print()
+
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-**Test**: Manual testing
-
-**Deliverable**: Working CLI interface
+</details>
 
 ---
-Please give me STAR 🌟 if you find this useful!
+
+## 🚀 Quick Start
+
+1. **Clone and Setup**:
+   ```bash
+   git clone <your-repo>
+   cd edubot
+   pip install python-dotenv httpx
+   ```
+
+2. **Configure API Key**:
+   ```bash
+   echo "OPENROUTER_API_KEY=sk-or-v1-your-key" > .env
+   ```
+
+3. **Run Tests**:
+   ```bash
+   python tests/test_provider.py
+   python tests/test_agent.py
+   ```
+
+4. **Start CLI**:
+   ```bash
+   python mybot/cli.py
+   ```
+
+## 📚 Key Concepts
+
+- **Modular Design**: Each component (provider, tools, sessions) is independent
+- **Tool Calling**: LLM decides when to use tools based on user requests
+- **Session Persistence**: Conversations saved to disk for context across restarts
+- **Extensible**: Add new tools by implementing the `Tool` interface
+
+## 🎯 Next Steps
+
+- Add more tools (web search, database queries, APIs)
+- Improve error handling and retry logic
+- Add streaming responses
+- Build a web interface
+- Add multi-modal capabilities
+
+---
+
+**Please give me a STAR 🌟 if you find this useful!**
