@@ -1,6 +1,6 @@
 # Building nanobot from Scratch: Implementation Guide
 
-This guide walks you through building a nanobot-like AI assistant step-by-step, in the correct order.
+This guide walks you through building a small bot AI assistant step-by-step, in the correct order.
 
 ## 🎯 Overview
 
@@ -263,3 +263,66 @@ class OpenRouterProvider(LLMProvider):
             finish_reason=choice.get("finish_reason", "stop")
         )
 ```
+
+**Test**:
+
+1. **Set up API Key**:
+   
+   Create a `.env` file in the project root directory:
+   ```bash
+   # Create .env file
+   touch .env
+   ```
+   
+   Add your OpenRouter API key to the `.env` file:
+   ```bash
+   OPENROUTER_API_KEY=sk-or-v1-your-api-key-here
+   ```
+   
+   **Note**: 
+   - Get your API key from https://openrouter.ai/keys
+   - API keys start with `sk-or-v1-`
+   - You can use quotes or no quotes: both formats work
+   - The `.env` file should be in the project root (same directory as `pyproject.toml`)
+
+2. **Install Dependencies**:
+   
+   Make sure you have `python-dotenv` installed to load the `.env` file:
+   ```bash
+   pip install python-dotenv
+   ```
+
+3. **Run the Test**:
+   
+   ```bash
+   # Activate your conda environment (if using conda)
+   conda activate vis-py311
+   
+   # Run the provider test
+   python tests/test_provider.py
+   ```
+   
+   The test will:
+   - Test basic chat functionality with a free model
+   - Test tool calling functionality
+   - Print responses and tool calls for verification
+   
+   **Expected Output**:
+   ```
+   Testing OpenRouter basic chat...
+   Response: Hello, World!
+   ✓ Test passed
+   
+   Testing OpenRouter with tools...
+   Tool call: get_weather with args: {'location': 'San Francisco, CA'}
+   ✓ Test passed
+   
+   All tests passed!
+   ```
+
+4. **Troubleshooting**:
+   
+   - **404 Error**: Model not found - check that the model name is correct
+   - **401/403 Error**: Authentication failed - verify your API key is correct
+   - **402 Error**: Insufficient credits - some models require API credits
+   - **ModuleNotFoundError**: Make sure you're running from the project root and dependencies are installed
