@@ -154,3 +154,112 @@ def test_message_creation():
 **Deliverable**: Core models defined and tested
 
 ---
+
+### Phase 2: LLM Provider (Day 2-3)
+
+**Goal**: Connect to an LLM API
+
+**Why Second**: Agent needs LLM to function
+
+**Files to Create**:
+1. `mybot/providers/base.py` - Abstract interface
+2. `mybot/providers/openrouter_provider.py` - OpenRouter implementation (recommended)
+   OR `mybot/providers/openai_provider.py` - OpenAI implementation
+
+**Important**: nanobot uses **dict-based messages**, not Message objects. Messages are `list[dict[str, Any]]` where each dict has `{"role": "user", "content": "..."}`.
+
+**Implementation**:
+
+```python
+# mybot/providers/base.py
+from abc import ABC, abstractmethod
+from typing import Any
+from mybot.models import LLMResponse
+
+class LLMProvider(ABC):
+    @abstractmethod
+    async def chat(
+        self,
+        messages: list[dict[str, Any]],  # Note: dicts, not Message objects!
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
+    ) -> LLMResponse:
+        """Send chat completion request.
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content' keys.
+            tools: Optional list of tool definitions in OpenAI format.
+            model: Model identifier.
+        """
+        pass
+```
+
+```python
+# mybot/providers/openrouter_provider.py
+import httpx
+import json
+from typing import Any
+from mybot.providers.base import LLMProvider
+from mybot.models import LLMResponse, ToolCall
+
+class OpenRouterProvider(LLMProvider):
+    """Provider using OpenRouter API (supports many models including free ones)."""
+    
+    def __init__(self, api_key: str, base_url: str = "https://openrouter.ai/api/v1"):
+        self.api_key = api_key
+        self.base_url = base_url
+        self.client = httpx.AsyncClient(
+            base_url=base_url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "HTTP-Referer": "https://github.com/yourusername/mybot",  # Optional
+            }
+        )
+    
+    async def chat(
+        self,
+        messages: list[dict[str, Any]],  # Already in dict format!
+        tools: list[dict[str, Any]] | None = None,
+        model: str = "nvidia/nemotron-3-nano-30b-a3b:free",  # Free model
+    ) -> LLMResponse:
+        payload = {
+            "model": model,
+            "messages": messages,  # Use directly, no conversion needed
+            "temperature": 0.7,
+        }
+        
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        
+        response = await self.client.post("/chat/completions", json=payload)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Parse response
+        choice = data["choices"][0]
+        message = choice["message"]
+        
+        tool_calls = []
+        if "tool_calls" in message and message["tool_calls"]:
+            for tc in message["tool_calls"]:
+                args = tc["function"]["arguments"]
+                # Arguments come as JSON string, parse if needed
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {"raw": args}
+                
+                tool_calls.append(ToolCall(
+                    id=tc["id"],
+                    name=tc["function"]["name"],
+                    arguments=args
+                ))
+        
+        return LLMResponse(
+            content=message.get("content"),
+            tool_calls=tool_calls,
+            finish_reason=choice.get("finish_reason", "stop")
+        )
+```
