@@ -3,8 +3,7 @@
 import asyncio
 import os
 from typing import Any
-
-from nanobot.agent.tools.base import Tool
+from mybot.tools.base import Tool
 
 
 class ExecTool(Tool):
