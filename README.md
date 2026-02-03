@@ -1,4 +1,4 @@
-# Building nanobot from Scratch: Implementation Guide
+# Building Small bot with LLM from Scratch: Implementation Guide
 
 This guide walks you through building a small bot AI assistant step-by-step, in the correct order.
 
