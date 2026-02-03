@@ -807,3 +807,49 @@ async def test_agent_complex_task():
 **Deliverable**: Basic agent working end-to-end
 
 **Explore:** Uncomment `print` from line 45-100 in `mybot/agent/loop.py` file to see how agent solve the task step by step.
+
+
+---
+
+### Phase 6: CLI Interface (Day 8-9)
+
+**Goal**: Interactive command-line interface
+
+**Why Sixth**: Need a way to interact with agent
+
+**Files to Create**:
+1. `mybot/cli.py` - CLI interface
+
+**Implementation**:
+
+```python
+# mybot/cli.py
+async def main():
+    """Main CLI entry point."""
+    data_dir = Path.home() / ".mybot"
+    data_dir.mkdir(exist_ok=True)
+    # Initialize components
+    provider = OpenRouterProvider(api_key=api_key)
+    tools = ToolRegistry()
+    tools.register(ReadFileTool())
+    tools.register(ExecTool())
+    sessions = SessionManager(data_dir)
+    agent = AgentLoop(provider, model="nvidia/nemotron-3-nano-30b-a3b:free", tools=tools, sessions=sessions)
+    print("Agent ready! Type 'quit' to exit.\n")
+    while True:
+        user_input = input("You: ").strip()
+        if user_input.lower() in ["quit", "exit"]:
+            break
+        if not user_input:
+            continue
+        print("Agent: ", end="", flush=True)
+        response = await agent.process_message(user_input)
+        print(response)
+        print()
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+**Test**: Manual testing
+
+**Deliverable**: Working CLI interface
