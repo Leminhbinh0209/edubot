@@ -31,13 +31,11 @@ This guide walks you through building a small bot AI assistant step-by-step, in 
 
 **Tasks**:
 1. Create project structure
-2. Set up `pyproject.toml` with dependencies
-3. Create basic README
-4. Plan architecture
+2. Plan architecture
 
 **Project Structure**:
 ```
-mybot/
+edubot/
 ├── mybot/
 │   ├── __init__.py
 │   ├── agent/
@@ -48,27 +46,6 @@ mybot/
 ├── pyproject.toml
 └── README.md
 ```
-
-**Dependencies to Add**:
-```toml
-[project]
-dependencies = [
-    "httpx>=0.25.0",
-    "pydantic>=2.0.0",
-    "loguru>=0.7.0",
-    "litellm>=1.0.0",  # Optional: for multi-provider support (like nanobot)
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-]
-```
-
-**Note**: You can use either:
-- Direct HTTP client (`httpx`) for simple providers
-- LiteLLM for multi-provider support (recommended, like nanobot)
 
 **Deliverable**: Project skeleton ready
 
@@ -326,3 +303,150 @@ class OpenRouterProvider(LLMProvider):
    - **401/403 Error**: Authentication failed - verify your API key is correct
    - **402 Error**: Insufficient credits - some models require API credits
    - **ModuleNotFoundError**: Make sure you're running from the project root and dependencies are installed
+
+---
+
+### Phase 3: Tool System (Day 3-5)
+
+**Goal**: Create extensible tool system
+
+**Why Third**: Agent needs tools to interact with environment
+
+**Files to Create**:
+1. `mybot/tools/base.py` - Tool interface
+2. `mybot/tools/registry.py` - Tool registry
+3. `mybot/tools/filesystem.py` - File tools
+4. `mybot/tools/shell.py` - Shell tool
+
+**Implementation**:
+
+```python
+# mybot/tools/base.py
+from abc import ABC, abstractmethod
+from typing import Any
+
+class Tool(ABC):
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        pass
+    
+    @property
+    @abstractmethod
+    def description(self) -> str:
+        pass
+    
+    @property
+    @abstractmethod
+    def parameters(self) -> dict[str, Any]:
+        """JSON Schema for parameters."""
+        pass
+    
+    @abstractmethod
+    async def execute(self, **kwargs: Any) -> str:
+        pass
+    
+    def to_schema(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters,
+            }
+        }
+```
+
+```python
+# mybot/tools/registry.py
+from typing import Any
+from mybot.tools.base import Tool
+
+class ToolRegistry:
+    def __init__(self):
+        self._tools: dict[str, Tool] = {}
+    
+    def register(self, tool: Tool) -> None:
+        self._tools[tool.name] = tool
+    
+    def get(self, name: str) -> Tool | None:
+        return self._tools.get(name)
+    
+    def get_definitions(self) -> list[dict[str, Any]]:
+        return [tool.to_schema() for tool in self._tools.values()]
+    
+    async def execute(self, name: str, params: dict[str, Any]) -> str:
+        tool = self._tools.get(name)
+        if not tool:
+            return f"Error: Tool '{name}' not found"
+        
+        try:
+            return await tool.execute(**params)
+        except Exception as e:
+            return f"Error executing {name}: {str(e)}"
+```
+
+```python
+# mybot/tools/filesystem.py
+from pathlib import Path
+from mybot.tools.base import Tool
+
+class ReadFileTool(Tool):
+    @property
+    def name(self) -> str:
+        return "read_file"
+    
+    @property
+    def description(self) -> str:
+        return "Read the contents of a file"
+    
+    @property
+    def parameters(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the file"
+                }
+            },
+            "required": ["path"]
+        }
+    
+    async def execute(self, path: str) -> str:
+        file_path = Path(path)
+        if not file_path.exists():
+            return f"Error: File not found: {path}"
+        
+        try:
+            return file_path.read_text(encoding="utf-8")
+        except Exception as e:
+            return f"Error reading file: {str(e)}"
+```
+
+**Test**:
+```python
+# test/test_tools.py
+from mybot.tools.registry import ToolRegistry
+from mybot.tools.filesystem import ReadFileTool
+import asyncio
+
+async def test_tool_registry():
+    registry = ToolRegistry()
+    registry.register(ReadFileTool())
+    
+    assert registry.get("read_file") is not None
+    assert len(registry.get_definitions()) == 1
+
+
+async def test_read_file():
+    tool = ReadFileTool()
+    # Create test file
+    test_file = Path("/tmp/test.txt")
+    test_file.write_text("Hello, World!\nThis test file is for testing the read file tool.")
+
+    result = await tool.execute(path=str(test_file))
+    print(result)
+    assert "Hello, World!" in result
+    print("✓ Test passed")
+```
