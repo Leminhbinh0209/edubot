@@ -39,8 +39,8 @@ class AgentLoop:
         messages.append({"role": "user", "content": user_message})
         iteration = 0
         final_response = None
-        print(f"\n[Agent Loop] Processing message: {user_message[:50]}...")
-        print(f"[Agent Loop] Session: {session_key}, Max iterations: {self.max_iterations}")
+        # print(f"\n[Agent Loop] Processing message: {user_message[:50]}...")
+        # print(f"[Agent Loop] Session: {session_key}, Max iterations: {self.max_iterations}")
         
         while iteration < self.max_iterations:
             iteration += 1
@@ -58,7 +58,7 @@ class AgentLoop:
             # print(f"[LLM Response] Finish reason: {response.finish_reason}")
             
             if response.has_tool_calls():
-                print(f"[Tool Calls] {len(response.tool_calls)} tool call(s) detected:")
+                # print(f"[Tool Calls] {len(response.tool_calls)} tool call(s) detected:")
                 tool_call_dicts = [
                     {
                         "id": tc.id,
