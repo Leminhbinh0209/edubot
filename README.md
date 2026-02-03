@@ -10,7 +10,7 @@ Build a lightweight AI assistant with tool calling, session management, and CLI 
 - Maintain conversation history
 - Use LLM providers for reasoning
 
-**Timeline**: 1 day for basic version, ~1-2 weeks for full feature set
+**Timeline**: 1 hours for basic version.
 
 ## 📋 Prerequisites
 
