@@ -1111,6 +1111,282 @@ response = await agent.process_message(
 
 </details>
 
+## Advanced Tools
+
+This section documents three powerful tools that extend the basic functionality of the AI assistant: code analysis, advanced search, and test running capabilities.
+
+<details>
+<summary><b>Click to expand: Code Analysis Tool</b></summary>
+
+**File**: `mybot/tools/code_analysis.py`
+
+The `CodeAnalysisTool` provides code quality analysis capabilities including linting, formatting, and type checking.
+
+**Supported Actions**:
+- `pylint`: Run pylint linter and get analysis results
+- `black_format`: Auto-format Python code using black
+- `mypy_check`: Run mypy type checker on Python code
+
+**Usage Example**:
+```python
+from mybot.tools.code_analysis import CodeAnalysisTool
+
+tool = CodeAnalysisTool()
+
+# Run pylint
+result = await tool.execute(action="pylint", file_path="myfile.py")
+# Returns: JSON string with score, errors, warnings, messages
+
+# Format code with black
+result = await tool.execute(action="black_format", file_path="myfile.py")
+# Returns: Formatted code or "already formatted" message
+
+# Check types with mypy
+result = await tool.execute(action="mypy_check", file_path="myfile.py")
+# Returns: JSON string with errors, warnings, notes, exit_code
+```
+
+**Pylint Output Format**:
+```json
+{
+  "score": 8.5,
+  "errors": 2,
+  "warnings": 5,
+  "messages": [...],
+  "raw_output": "..."
+}
+```
+
+**Mypy Output Format**:
+```json
+{
+  "errors": [
+    {"file": "myfile.py", "line": 10, "message": "...", "code": "..."}
+  ],
+  "warnings": [...],
+  "notes": [...],
+  "exit_code": 1
+}
+```
+
+**Key Features**:
+- Graceful handling when tools are not installed
+- Configurable timeout (default: 60 seconds)
+- Structured JSON output for easy parsing
+- Automatic error detection and reporting
+
+**Installation Requirements**:
+- `pylint`: `pip install pylint`
+- `black`: `pip install black`
+- `mypy`: `pip install mypy`
+
+</details>
+
+<details>
+<summary><b>Click to expand: Search Tool</b></summary>
+
+**File**: `mybot/tools/search.py`
+
+The `SearchTool` provides advanced file search and code analysis capabilities, going beyond basic file reading.
+
+**Supported Actions**:
+- `grep`: Search for patterns in files using regex
+- `find_files`: Find files matching a pattern/name
+- `find_in_files`: Search for text in files with specific extensions
+- `find_todos`: Find TODO, FIXME, HACK, NOTE, XXX comments in code
+- `count_lines`: Count lines of code, optionally grouped by file extension
+
+**Usage Example**:
+```python
+from mybot.tools.search import SearchTool
+
+tool = SearchTool()
+
+# Grep for pattern
+result = await tool.execute(action="grep", path="./src", pattern="def.*test", recursive=True)
+# Returns: List of matches with file, line, content
+
+# Find files
+result = await tool.execute(action="find_files", path="./src", pattern="*.py")
+# Returns: List of matching file paths
+
+# Find text in specific file types
+result = await tool.execute(action="find_in_files", text="TODO", extensions=["py", "js"])
+# Returns: Dict mapping file paths to line numbers
+
+# Find TODO comments
+result = await tool.execute(action="find_todos", path="./src")
+# Returns: List of TODO markers with file, line, type, content
+
+# Count lines of code
+result = await tool.execute(action="count_lines", path="./src")
+# Returns: Dict with line counts grouped by extension
+```
+
+**Grep Output Format**:
+```json
+[
+  {
+    "file": "src/main.py",
+    "line": 42,
+    "content": "def test_function():"
+  },
+  ...
+]
+```
+
+**Find TODOs Output Format**:
+```json
+[
+  {
+    "file": "src/main.py",
+    "line": 10,
+    "type": "TODO",
+    "content": "Fix this function"
+  },
+  {
+    "file": "src/main.py",
+    "line": 15,
+    "type": "FIXME",
+    "content": "Add error handling"
+  }
+]
+```
+
+**Count Lines Output Format**:
+```json
+{
+  "py": {
+    "total_lines": 1500,
+    "code_lines": 1200,
+    "blank_lines": 300,
+    "file_count": 25
+  },
+  "js": {
+    "total_lines": 800,
+    "code_lines": 650,
+    "blank_lines": 150,
+    "file_count": 12
+  }
+}
+```
+
+**Key Features**:
+- Regex pattern support for grep
+- Recursive directory searching
+- Binary file detection and skipping
+- Natural boundary detection for TODOs
+- Extension-based line counting
+- Handles large codebases efficiently
+
+</details>
+
+<details>
+<summary><b>Click to expand: Test Runner Tool</b></summary>
+
+**File**: `mybot/tools/test_runner.py`
+
+The `TestTool` provides comprehensive test running capabilities for multiple testing frameworks and coverage reporting.
+
+**Supported Actions**:
+- `run_pytest`: Run pytest tests (Python)
+- `run_jest`: Run jest tests (JavaScript/TypeScript)
+- `run_unittest`: Run Python unittest module
+- `coverage_report`: Generate code coverage report
+
+**Usage Example**:
+```python
+from mybot.tools.test_runner import TestTool
+
+tool = TestTool()
+
+# Run pytest
+result = await tool.execute(action="run_pytest", path="./tests", verbose=True)
+# Returns: JSON string with passed, failed, skipped, errors, output, exit_code
+
+# Run jest
+result = await tool.execute(action="run_jest", path="./tests")
+# Returns: JSON string with passed, failed, skipped, output, exit_code
+
+# Run unittest
+result = await tool.execute(action="run_unittest", module="tests.test_example")
+# Returns: JSON string with passed, failed, skipped, errors, output, exit_code
+
+# Generate coverage report
+result = await tool.execute(action="coverage_report")
+# Returns: JSON string with coverage_percent, lines_covered, lines_total, branches_covered
+```
+
+**Pytest/Jest/Unittest Output Format**:
+```json
+{
+  "passed": 45,
+  "failed": 2,
+  "skipped": 3,
+  "errors": 0,
+  "output": "...",
+  "exit_code": 1
+}
+```
+
+**Coverage Report Output Format**:
+```json
+{
+  "coverage_percent": 85,
+  "lines_covered": 1200,
+  "lines_total": 1412,
+  "branches_covered": 450,
+  "output": "..."
+}
+```
+
+**Key Features**:
+- Supports multiple test frameworks (pytest, jest, unittest)
+- Automatic output parsing to extract test counts
+- Configurable timeout (default: 300 seconds for tests)
+- Coverage report generation (supports pytest-cov and coverage.py)
+- Verbose/quiet modes for pytest
+- Graceful handling when test tools are not installed
+
+**Installation Requirements**:
+- `pytest`: `pip install pytest`
+- `pytest-cov`: `pip install pytest-cov` (for coverage)
+- `coverage`: `pip install coverage` (alternative coverage tool)
+- `jest`: `npm install --save-dev jest` (for JavaScript/TypeScript tests)
+
+</details>
+
+<details>
+<summary><b>Click to expand: Registering Advanced Tools</b></summary>
+
+To use these tools in your agent, register them in your CLI or agent setup:
+
+```python
+from mybot.tools.code_analysis import CodeAnalysisTool
+from mybot.tools.search import SearchTool
+from mybot.tools.test_runner import TestTool
+from mybot.tools.registry import ToolRegistry
+
+# Create tool registry
+tools = ToolRegistry()
+
+# Register basic tools
+tools.register(ReadFileTool())
+tools.register(ExecTool())
+
+# Register advanced tools
+tools.register(CodeAnalysisTool())
+tools.register(SearchTool())
+tools.register(TestTool())
+
+# Use with agent
+agent = AgentLoop(provider, tools=tools, sessions=sessions)
+```
+
+The agent will automatically have access to all registered tools and can use them based on user requests.
+
+</details>
+
 ---
 
 **Please give me a STAR 🌟 if you find this useful!**

@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Awaitable, Union
 from mybot.providers.base import LLMProvider
 from mybot.tools.registry import ToolRegistry
 from mybot.session.manager import SessionManager
@@ -28,7 +28,7 @@ class AgentLoop:
         user_message: str,
         session_key: str = "default",
         stream: bool = False,
-        stream_callback: Optional[Callable[[str], None]] = None,
+        stream_callback: Optional[Union[Callable[[str], None], Callable[[str], Awaitable[None]]]] = None,
     ) -> str:
         """Process a user message and return response."""
         import json
@@ -109,7 +109,11 @@ class AgentLoop:
                         model=self.model
                     ):
                         final_response += chunk
-                        stream_callback(chunk)
+                        # Support both sync and async callbacks
+                        if asyncio.iscoroutinefunction(stream_callback):
+                            await stream_callback(chunk)
+                        else:
+                            stream_callback(chunk)
                 else:
                     final_response = response.content
                 break
