@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-from mybot.tools.filesystem import ReadFileTool
+from mybot.tools.filesystem import ReadFileTool, WriteFileTool
 from mybot.tools.shell import ExecTool
 from mybot.tools.code_analysis import CodeAnalysisTool
 from mybot.tools.search import SearchTool
@@ -36,6 +36,7 @@ async def main():
 
     # Register basic tools
     tools.register(ReadFileTool())
+    tools.register(WriteFileTool())
     tools.register(ExecTool())
 
     # Register advanced tools
@@ -44,7 +45,8 @@ async def main():
     tools.register(TestTool())
 
     sessions = SessionManager(data_dir)
-    agent = AgentLoop(provider, model=MODEL, tools=tools, sessions=sessions)
+    # Enable planning mode for better multi-step task handling
+    agent = AgentLoop(provider, model=MODEL, tools=tools, sessions=sessions, use_planning=True)
     print("Agent ready! Type 'quit' to exit.\n")
     while True:
         user_input = input("You: ").strip()
