@@ -716,6 +716,7 @@ if __name__ == "__main__":
 - Build a web interface
 - Add multi-modal capabilities
 
+Please switch to `advance_dev` for more feature.
 ---
 
 **Please give me a STAR 🌟 if you find this useful!**
