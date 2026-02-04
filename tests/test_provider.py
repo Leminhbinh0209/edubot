@@ -91,7 +91,7 @@ async def test_openrouter_with_tools():
     
     assert response is not None
     # The response might have tool calls or content
-    if response.has_tool_calls():
+    if response.has_tool_calls:
         assert len(response.tool_calls) > 0
         tool_call = response.tool_calls[0]
         assert tool_call.name == "get_weather"
