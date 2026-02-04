@@ -1388,5 +1388,531 @@ The agent will automatically have access to all registered tools and can use the
 </details>
 
 ---
+## Planning
+
+**Why**: Enable the agent to break down complex, multi-step tasks into actionable plans, execute them systematically, and synthesize results into coherent responses.
+
+The planning system transforms the agent from reactive tool-calling to proactive task orchestration, allowing it to handle complex requests that require multiple steps, dependencies, and data flow between steps.
+
+<details>
+<summary><b>Click to expand: Overview</b></summary>
+
+**What is Planning Mode?**
+
+Planning mode is a three-phase approach to handling complex tasks:
+
+1. **Plan Phase**: The LLM analyzes the user's request and creates a detailed, step-by-step execution plan
+2. **Execute Phase**: The agent executes the plan, respecting dependencies and parallelizing independent steps
+3. **Synthesize Phase**: The agent summarizes execution results into a natural language response
+
+**Key Features**:
+- Automatic plan generation from natural language requests
+- Dependency management between steps
+- Parallel execution of independent steps for performance
+- Dynamic argument resolution from previous step results
+- Plan validation and auto-fixing
+- Retry logic for failed steps
+- Comprehensive error handling
+
+**When to Use Planning**:
+- Multi-step tasks (e.g., "Find all TODOs, then run pylint on those files")
+- Tasks with dependencies (e.g., "Read file X, analyze it, then write results to file Y")
+- Complex workflows (e.g., "Find test files, run tests, generate coverage report")
+- Tasks requiring data flow between steps
+
+</details>
+
+<details>
+<summary><b>Click to expand: Enabling Planning Mode</b></summary>
+
+**File**: `mybot/cli.py` or `mybot/agent/loop.py`
+
+Planning mode is enabled by setting `use_planning=True` when creating the `AgentLoop`:
+
+```python
+from mybot.agent.loop import AgentLoop
+from mybot.providers.openrouter_provider import OpenRouterProvider
+from mybot.tools.registry import ToolRegistry
+
+# Initialize agent with planning enabled
+agent = AgentLoop(
+    provider=provider,
+    model="nvidia/nemotron-3-nano-30b-a3b:free",
+    tools=tools,
+    sessions=sessions,
+    use_planning=True,  # Enable planning mode
+    verbose=True,        # Show detailed execution logs
+    max_retries=2         # Retry failed steps up to 2 times
+)
+```
+
+**Configuration Options**:
+- `use_planning`: Enable/disable planning mode (default: `False`)
+- `verbose`: Show detailed execution logs (default: `True`)
+- `max_retries`: Number of retries for failed steps (default: `2`)
+
+</details>
+
+<details>
+<summary><b>Click to expand: Phase 1 - Planning</b></summary>
+
+**How It Works**:
+
+The planning phase uses the LLM to analyze the user's request and generate a structured execution plan:
+
+```python
+async def _plan(self, user_message: str, session) -> list[dict]:
+    """Create execution plan using LLM."""
+    # 1. Build detailed tool schemas
+    # 2. Send planning prompt to LLM
+    # 3. Extract JSON plan from response
+    # 4. Validate plan structure
+    # 5. Auto-fix common issues
+    # 6. Return validated plan
+```
+
+**Plan Structure**:
+
+Each plan consists of steps with the following structure:
+
+```json
+{
+  "steps": [
+    {
+      "step": 1,
+      "tool": "search",
+      "args": {
+        "action": "find_todos",
+        "path": "mybot"
+      },
+      "reasoning": "Find all TODO comments in the codebase",
+      "depends_on": []
+    },
+    {
+      "step": 2,
+      "tool": "code_analysis",
+      "args": {
+        "action": "pylint",
+        "file_path": "{{step1.output[0]}}"
+      },
+      "reasoning": "Run pylint on the first file with TODOs",
+      "depends_on": [1]
+    }
+  ]
+}
+```
+
+**Plan Validation**:
+
+The system validates plans before execution:
+- ✅ Step numbers are valid and unique
+- ✅ Tools exist in the registry
+- ✅ Dependencies don't reference future steps
+- ✅ Required parameters are present
+
+**Auto-Fixing**:
+
+Common plan issues are automatically fixed:
+- Renumbering steps sequentially
+- Removing steps with invalid tools
+- Fixing dependency references
+
+**Example Output**:
+
+```
+📋 PHASE 1: Creating Execution Plan...
+------------------------------------------------------------
+   Generated 3 step(s)
+
+✅ Plan created with 3 step(s)
+
+📝 Execution Plan:
+   Step 1: Find all TODO comments in mybot directory
+   Step 2: Run pylint on files with TODOs (depends on: [1])
+   Step 3: Generate coverage report (depends on: [2])
+```
+
+</details>
+
+<details>
+<summary><b>Click to expand: Phase 2 - Execution</b></summary>
+
+**How It Works**:
+
+The execution phase runs the plan steps, respecting dependencies and parallelizing when possible:
+
+```python
+async def _execute_plan(self, plan: list[dict]) -> dict:
+    """Execute plan steps, parallelizing independent steps."""
+    # 1. Find steps ready to execute (dependencies met)
+    # 2. Execute ready steps in parallel
+    # 3. Collect results
+    # 4. Repeat until all steps complete
+```
+
+**Key Features**:
+
+1. **Dependency Management**: Steps only execute when their dependencies are complete
+2. **Parallel Execution**: Independent steps run simultaneously for better performance
+3. **Dynamic Argument Resolution**: Arguments are automatically extracted from previous step results
+4. **Retry Logic**: Failed steps are retried up to `max_retries` times
+5. **Error Detection**: Tool-specific error detection distinguishes real errors from legitimate outputs
+
+**Dynamic Argument Resolution**:
+
+The system automatically extracts data from previous step results:
+
+```python
+# Step 1: find_files returns ["test1.py", "test2.py"]
+# Step 2: Can use {{step1.output[0]}} to reference first file
+# System automatically resolves to "test1.py"
+```
+
+**Supported Patterns**:
+- Template placeholders: `{{step1.output[0]}}`
+- Automatic extraction from formatted output
+- Path construction from relative filenames
+- JSON parsing from structured output
+
+**Example Output**:
+
+```
+⚙️  PHASE 2: Executing Plan...
+============================================================
+
+📍 Step 1: Find all TODO comments in mybot directory
+   🔧 Tool: search
+   📥 Args: {
+      "action": "find_todos",
+      "path": "mybot"
+   }
+   ✅ Success
+   📤 Result preview: Found 5 results:
+   mybot/providers/base.py:10: TODO: Add caching
+   ...
+
+📍 Step 2: Run pylint on files with TODOs
+   🔧 Tool: code_analysis
+   📥 Args: {
+      "action": "pylint",
+      "file_path": "mybot/providers/base.py"
+   }
+   🔄 Auto-extracted file path from step 1: mybot/providers/base.py
+   ✅ Success
+   📤 Result preview: {
+     "score": 8.5,
+     "errors": 2,
+     ...
+   }
+```
+
+**Parallel Execution**:
+
+When multiple steps are ready (no dependencies), they execute in parallel:
+
+```
+🔄 Executing 2 step(s) in parallel...
+
+📍 Step 2: Analyze code quality
+📍 Step 3: Count lines of code
+   (Both execute simultaneously)
+```
+
+</details>
+
+<details>
+<summary><b>Click to expand: Phase 3 - Synthesis</b></summary>
+
+**How It Works**:
+
+The synthesis phase creates a natural language summary of the execution results:
+
+```python
+async def _synthesize(
+    self,
+    user_message: str,
+    plan: list,
+    results: dict,
+    stream: bool,
+    stream_callback
+) -> str:
+    """Create final response from execution results."""
+    # 1. Build execution summary
+    # 2. Send to LLM with results
+    # 3. Generate natural language response
+    # 4. Support streaming output
+```
+
+**Synthesis Process**:
+
+1. **Summary Building**: Creates a structured summary of all step results
+2. **LLM Synthesis**: Sends summary to LLM with instructions to create a helpful response
+3. **Streaming Support**: Supports streaming for real-time output
+4. **Error Highlighting**: Mentions any errors or issues that occurred
+
+**Example Output**:
+
+```
+📊 PHASE 3: Synthesizing Results...
+============================================================
+
+💬 Final Response:
+------------------------------------------------------------
+**What was done**
+
+1. **Search** – Found all TODO comments in the `mybot/` directory.
+   *Result:* 5 TODO comments found across 3 files.
+
+2. **Code Analysis (pylint)** – Ran pylint on files with TODOs.
+   *Result:* Code quality score: 8.5/10. Found 2 errors and 5 warnings.
+
+3. **Coverage Report** – Generated test coverage report.
+   *Result:* Coverage: 85% (1200/1412 lines covered).
+
+**Key Findings**
+- Most TODOs are in `mybot/providers/base.py`
+- Pylint found 2 critical errors that should be addressed
+- Test coverage is good but could be improved for edge cases
+```
+
+</details>
+
+<details>
+<summary><b>Click to expand: Advanced Features</b></summary>
+
+**1. Dynamic Argument Resolution**
+
+The system automatically extracts file paths and data from previous step results:
+
+```python
+# Example: Step 1 finds files, Step 2 processes them
+Step 1: find_files(pattern="*.py", path="tests")
+  → Returns: ["test1.py", "test2.py"]
+
+Step 2: pylint(file_path="{{step1.output[0]}}")
+  → Automatically resolves to: "tests/test1.py"
+```
+
+**2. Template Placeholders**
+
+Steps can reference previous step outputs using template syntax:
+
+- `{{step1.output}}` - Full output from step 1
+- `{{step1.output[0]}}` - First item from step 1's output
+- `{{step2.output[1]}}` - Second item from step 2's output
+
+**3. Error Handling**
+
+- Failed dependencies are detected before extraction
+- Steps with failed dependencies skip extraction
+- Tool-specific error detection (distinguishes errors from legitimate outputs)
+- Retry logic with configurable attempts
+
+**4. Plan Validation**
+
+Plans are validated before execution:
+- Step numbers must be valid integers
+- No duplicate step numbers
+- All tools must exist in registry
+- Dependencies must reference previous steps only
+- Required parameters must be present
+
+**5. Parallel Execution**
+
+Independent steps (no dependencies) execute in parallel:
+- Significantly faster for multi-step tasks
+- Automatic dependency resolution
+- Safe concurrent execution
+
+</details>
+
+<details>
+<summary><b>Click to expand: Example Usage</b></summary>
+
+**Example 1: Simple Multi-Step Task**
+
+```
+User: Find all Python files in tests directory, run pylint on them, then generate a coverage report
+
+Agent:
+============================================================
+🧠 PLANNING MODE ACTIVATED
+============================================================
+
+📋 PHASE 1: Creating Execution Plan...
+   Generated 3 step(s)
+
+✅ Plan created with 3 step(s)
+
+📝 Execution Plan:
+   Step 1: Find all Python files in tests directory
+   Step 2: Run pylint on the first file (depends on: [1])
+   Step 3: Generate coverage report (depends on: [2])
+
+⚙️  PHASE 2: Executing Plan...
+📍 Step 1: Find all Python files...
+   ✅ Success: Found 5 files
+
+📍 Step 2: Run pylint...
+   🔄 Auto-extracted file path: tests/test_agent.py
+   ✅ Success: Score 8.5/10
+
+📍 Step 3: Generate coverage report...
+   ✅ Success: Coverage 85%
+
+📊 PHASE 3: Synthesizing Results...
+💬 Final Response:
+Found 5 Python test files. Ran pylint on tests/test_agent.py 
+with score 8.5/10. Coverage report shows 85% coverage...
+```
+
+**Example 2: Complex Workflow with Dependencies**
+
+```
+User: Find all TODOs in mybot directory, then run pylint on files that have TODOs, then format those files with black
+
+Agent:
+📋 PHASE 1: Creating Execution Plan...
+   Generated 3 step(s)
+
+📝 Execution Plan:
+   Step 1: Find all TODOs in mybot directory
+   Step 2: Run pylint on files with TODOs (depends on: [1])
+   Step 3: Format files with black (depends on: [2])
+
+⚙️  PHASE 2: Executing Plan...
+📍 Step 1: Find all TODOs...
+   ✅ Success: Found 5 TODOs in 3 files
+
+📍 Step 2: Run pylint...
+   🔄 Auto-extracted file path: mybot/providers/base.py
+   ✅ Success: Found 2 errors
+
+📍 Step 3: Format with black...
+   🔄 Auto-extracted file path: mybot/providers/base.py
+   ✅ Success: Formatted successfully
+```
+
+**Example 3: Parallel Execution**
+
+```
+User: Count lines of code in mybot, find all test files, and search for "async def" patterns
+
+Agent:
+📋 PHASE 1: Creating Execution Plan...
+   Generated 3 step(s)
+
+📝 Execution Plan:
+   Step 1: Count lines of code in mybot
+   Step 2: Find all test files
+   Step 3: Search for "async def" patterns
+
+⚙️  PHASE 2: Executing Plan...
+🔄 Executing 3 step(s) in parallel...
+
+📍 Step 1: Count lines...
+📍 Step 2: Find test files...
+📍 Step 3: Search patterns...
+   (All execute simultaneously)
+
+✅ All steps completed successfully
+```
+
+</details>
+
+<details>
+<summary><b>Click to expand: Best Practices</b></summary>
+
+**1. Use Planning for Complex Tasks**
+
+Planning mode is ideal for:
+- ✅ Multi-step workflows
+- ✅ Tasks with dependencies
+- ✅ Data flow between steps
+- ✅ Complex analysis tasks
+
+Standard mode is better for:
+- ✅ Simple single-step tasks
+- ✅ Direct tool calls
+- ✅ Conversational responses
+
+**2. Clear Task Descriptions**
+
+Provide clear, specific task descriptions:
+- ✅ "Find all TODOs, run pylint on those files, then format them"
+- ❌ "Do stuff with code"
+
+**3. Leverage Dependencies**
+
+Use dependencies to ensure correct execution order:
+```json
+{
+  "step": 2,
+  "depends_on": [1]  // Ensures step 1 completes first
+}
+```
+
+**4. Use Template Placeholders**
+
+Reference previous step outputs explicitly:
+```json
+{
+  "args": {
+    "file_path": "{{step1.output[0]}}"
+  }
+}
+```
+
+**5. Monitor Execution**
+
+Use `verbose=True` to see detailed execution logs:
+- Step execution status
+- Argument resolution
+- Error details
+- Parallel execution indicators
+
+</details>
+
+<details>
+<summary><b>Click to expand: Troubleshooting</b></summary>
+
+**Issue: Plan validation fails**
+
+**Solution**: The system auto-fixes common issues, but check:
+- Tool names match exactly (case-sensitive)
+- Required parameters are included
+- Dependencies reference valid step numbers
+
+**Issue: Steps not executing in parallel**
+
+**Possible Causes**:
+- Steps have dependencies (must execute sequentially)
+- Only one step is ready at a time
+- Dependencies not properly defined
+
+**Solution**: Review dependency structure. Independent steps will execute in parallel automatically.
+
+**Issue: Argument resolution fails**
+
+**Possible Causes**:
+- Previous step failed
+- Output format doesn't match expected pattern
+- Template placeholder syntax incorrect
+
+**Solution**:
+- Check previous step results
+- Use explicit template placeholders: `{{step1.output[0]}}`
+- Verify output format from previous step
+
+**Issue: Retry logic not working**
+
+**Check**:
+- `max_retries` is set > 0
+- Error is retryable (not validation error)
+- Tool supports retries
+
+</details>
+
+---
 
 **Please give me a STAR 🌟 if you find this useful!**
