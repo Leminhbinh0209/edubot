@@ -37,8 +37,17 @@ async def main():
         if not user_input:
             continue
         print("Agent: ", end="", flush=True)
-        response = await agent.process_message(user_input)
-        print(response)
+        
+        # Define callback to print chunks as they arrive
+        def print_chunk(chunk: str):
+            print(chunk, end="", flush=True)
+        
+        response = await agent.process_message(
+            user_input,
+            stream=True,
+            stream_callback=print_chunk
+        )
+        print()  # New line after response
         print()
 if __name__ == "__main__":
     asyncio.run(main())

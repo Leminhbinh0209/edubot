@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from typing import Callable, Optional
 from mybot.providers.base import LLMProvider
 from mybot.tools.registry import ToolRegistry
 from mybot.session.manager import SessionManager
@@ -26,6 +27,8 @@ class AgentLoop:
         self,
         user_message: str,
         session_key: str = "default",
+        stream: bool = False,
+        stream_callback: Optional[Callable[[str], None]] = None,
     ) -> str:
         """Process a user message and return response."""
         import json
@@ -97,7 +100,18 @@ class AgentLoop:
                 # print(f"[Tool Execution] All tools executed, continuing loop...")
             else:
                 # print(f"[Final Response] No tool calls, returning response")
-                final_response = response.content
+                # For final responses, use streaming if enabled
+                if stream and stream_callback:
+                    final_response = ""
+                    async for chunk in self.provider.chat_stream(
+                        messages=messages,
+                        tools=None,  # No tools for final response
+                        model=self.model
+                    ):
+                        final_response += chunk
+                        stream_callback(chunk)
+                else:
+                    final_response = response.content
                 break
         if final_response is None:
             final_response = "I'm having trouble processing that request."
