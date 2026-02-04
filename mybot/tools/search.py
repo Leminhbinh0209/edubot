@@ -24,14 +24,14 @@ class SearchTool(Tool):
     
     @property
     def description(self) -> str:
-        return """Advanced file search and analysis tool. Supports:
-        - grep: Search for patterns in files (supports regex)
-        - find_files: Find files matching a pattern/name
-        - find_in_files: Search for text in files with specific extensions
-        - find_todos: Find TODO, FIXME, HACK, NOTE, XXX comments in code
-        - count_lines: Count lines of code, optionally grouped by file extension
+        return """Advanced file search and analysis tool. USE THIS TOOL when user asks to:
+        - Search for patterns/text in files (action="grep" or "find_in_files")
+        - Find files by name/pattern (action="find_files")
+        - Find TODO/FIXME comments (action="find_todos")
+        - Count lines of code (action="count_lines")
         
-        Use the 'action' parameter to specify which operation to perform."""
+        Always use this tool for file searching, pattern matching, or code analysis requests.
+        Required parameters: action and path."""
     
     @property
     def parameters(self) -> dict[str, Any]:

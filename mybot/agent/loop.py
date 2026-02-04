@@ -34,8 +34,27 @@ class AgentLoop:
         import json
         session = self.sessions.get_or_create(session_key)
         messages = []
-        system_prompt = """You are a helpful AI assistant. You have access to tools.
-        When you need to use a tool, call it. Otherwise, respond directly to the user."""
+        system_prompt = """You are a helpful AI assistant with access to powerful tools. 
+
+IMPORTANT: You MUST use tools when the user requests:
+- Code formatting (black, formatting) → use code_analysis tool with action="black_format"
+- Code linting (pylint, linting) → use code_analysis tool with action="pylint"
+- Type checking (mypy, types) → use code_analysis tool with action="mypy_check"
+- Searching files/patterns (grep, find, search) → use search tool
+- Finding TODOs/comments → use search tool with action="find_todos"
+- Running tests (pytest, jest, unittest) → use test_runner tool
+- Coverage reports → use test_runner tool with action="coverage_report"
+- Reading files → use read_file tool
+- Executing commands → use exec tool
+
+When a user asks you to perform any of these actions, you MUST call the appropriate tool. Do not try to do these tasks yourself - always use the tools.
+
+Examples:
+- User: "Format mybot/cli.py with black" → Call code_analysis(action="black_format", file_path="mybot/cli.py")
+- User: "Find all TODOs" → Call search(action="find_todos", path=".")
+- User: "Run pytest tests" → Call test_runner(action="run_pytest", path="./tests")
+
+Only respond directly without tools for general conversation, explanations, or questions that don't require tool execution."""
         messages.append({"role": "system", "content": system_prompt})
         history = session.get_history()
         messages.extend(history)

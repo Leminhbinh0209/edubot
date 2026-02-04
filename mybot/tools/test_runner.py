@@ -20,13 +20,14 @@ class TestTool(Tool):
     
     @property
     def description(self) -> str:
-        return """Run tests and generate coverage reports. Supports:
-        - run_pytest: Run pytest tests (Python)
-        - run_jest: Run jest tests (JavaScript/TypeScript)
-        - run_unittest: Run Python unittest module
-        - coverage_report: Generate code coverage report
+        return """Run tests and generate coverage reports. USE THIS TOOL when user asks to:
+        - Run pytest tests (action="run_pytest")
+        - Run jest tests (action="run_jest")
+        - Run unittest (action="run_unittest")
+        - Generate coverage report (action="coverage_report")
         
-        Use the 'action' parameter to specify which test runner to use."""
+        Always use this tool for running tests or generating coverage reports.
+        Required parameters: action (one of: run_pytest, run_jest, run_unittest, coverage_report)."""
     
     @property
     def parameters(self) -> dict[str, Any]:

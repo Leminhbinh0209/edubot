@@ -20,12 +20,13 @@ class CodeAnalysisTool(Tool):
     
     @property
     def description(self) -> str:
-        return """Run code analysis tools on Python files. Supports:
-        - pylint: Run pylint linter and get analysis results
-        - black_format: Auto-format Python code using black
-        - mypy_check: Run mypy type checker on Python code
+        return """Run code analysis tools on Python files. USE THIS TOOL when user asks to:
+        - Format code with black (action="black_format")
+        - Run pylint linter (action="pylint") 
+        - Check types with mypy (action="mypy_check")
         
-        Use the 'action' parameter to specify which tool to run."""
+        Always use this tool for code formatting, linting, or type checking requests.
+        Required parameters: action (one of: pylint, black_format, mypy_check) and file_path."""
     
     @property
     def parameters(self) -> dict[str, Any]:
