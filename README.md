@@ -33,7 +33,7 @@ edubot/
 ```
 
 ---
-
+# PART I: BASIC COMPONENTS
 ## Phase 1: Core Data Models
 
 **Why First**: Everything else depends on these foundational structures.
@@ -709,12 +709,407 @@ if __name__ == "__main__":
 - **Extensible**: Add new tools by implementing the `Tool` interface
 
 ## 🎯 Next Steps
-
+- Add streaming responses
 - Add more tools (web search, database queries, APIs)
 - Improve error handling and retry logic
-- Add streaming responses
 - Build a web interface
 - Add multi-modal capabilities
+
+---
+# PART II: IMPROVEMENT
+## Streaming Response
+
+**Why**: Improve user experience by displaying responses in real-time instead of waiting for the complete response.
+
+This implementation adds streaming support to display text as it's generated, making the interface feel more responsive and interactive.
+
+<details>
+<summary><b>Click to expand: Overview</b></summary>
+
+**What Changed**:
+1. **Base Provider Interface**: Added `chat_stream()` method for streaming support
+2. **OpenRouterProvider**: Implemented Server-Sent Events (SSE) streaming
+3. **AgentLoop**: Added streaming support with async callbacks
+4. **StreamSmoother**: Utility class for smooth, natural-feeling output
+5. **CLI**: Integrated streaming with smooth output display
+
+**Key Features**:
+- Real-time text display as it's generated
+- Smooth output with intelligent chunking at natural boundaries
+- Automatic fallback to non-streaming for tool calls
+- Configurable smoothing parameters
+
+</details>
+
+<details>
+<summary><b>Click to expand: Base Provider Interface</b></summary>
+
+**File**: `mybot/providers/base.py`
+
+Added `chat_stream()` method to the base `LLMProvider` class:
+
+```python
+async def chat_stream(
+    self,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    model: str | None = None,
+) -> AsyncIterator[str]:
+    """Stream chat completion response.
+    
+    Args:
+        messages: List of message dicts with 'role' and 'content' keys.
+        tools: Optional list of tool definitions in OpenAI format.
+        model: Model identifier.
+        
+    Yields:
+        Text chunks as they are generated.
+        
+    Note:
+        This is an optional method. Providers that don't support streaming
+        can fall back to the regular chat() method.
+    """
+    # Default implementation: fall back to non-streaming
+    response = await self.chat(messages, tools, model)
+    if response.content:
+        yield response.content
+```
+
+**Key Points**:
+- Returns an async iterator that yields text chunks
+- Default implementation falls back to non-streaming for compatibility
+- Providers can override this method to implement actual streaming
+
+</details>
+
+<details>
+<summary><b>Click to expand: OpenRouterProvider Streaming</b></summary>
+
+**File**: `mybot/providers/openrouter_provider.py`
+
+Implemented `chat_stream()` method following OpenRouter's Server-Sent Events (SSE) format:
+
+```python
+async def chat_stream(
+    self,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    model: str | None = None,
+) -> AsyncIterator[str]:
+    """Stream chat completion response from OpenRouter API.
+    
+    Note: Streaming is only supported for non-tool responses.
+    If tools are provided, this will fall back to non-streaming.
+    """
+    # Fall back to non-streaming for tool calls
+    if tools:
+        response = await self.chat(messages, tools, model)
+        if response.content:
+            yield response.content
+        return
+    
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.7,
+        "stream": True,  # Enable streaming
+    }
+    
+    buffer = ""
+    async with self.client.stream("POST", "/chat/completions", json=payload) as response:
+        response.raise_for_status()
+        async for chunk in response.aiter_text():
+            buffer += chunk
+            while True:
+                try:
+                    # Find the next complete SSE line
+                    line_end = buffer.find('\n')
+                    if line_end == -1:
+                        break
+                    line = buffer[:line_end].strip()
+                    buffer = buffer[line_end + 1:]
+                    if line.startswith('data: '):
+                        data = line[6:]  # Remove 'data: ' prefix
+                        if data == '[DONE]':
+                            return
+                        try:
+                            data_obj = json.loads(data)
+                            content = data_obj["choices"][0]["delta"].get("content")
+                            if content:
+                                yield content
+                        except json.JSONDecodeError:
+                            pass
+                except Exception:
+                    break
+```
+
+**Key Implementation Details**:
+- Uses `httpx.AsyncClient.stream()` for streaming HTTP requests
+- Parses Server-Sent Events (SSE) format with `data: ` prefix
+- Handles incomplete lines with a buffer mechanism
+- Extracts content from `delta.content` in the response
+- Falls back to non-streaming when tools are provided (tool calls require full response)
+
+</details>
+
+<details>
+<summary><b>Click to expand: AgentLoop Streaming Support</b></summary>
+
+**File**: `mybot/agent/loop.py`
+
+Updated `process_message()` to support streaming:
+
+```python
+async def process_message(
+    self,
+    user_message: str,
+    session_key: str = "default",
+    stream: bool = False,
+    stream_callback: Optional[Union[Callable[[str], None], Callable[[str], Awaitable[None]]]] = None,
+) -> str:
+    """Process a user message and return response."""
+    # ... existing code ...
+    
+    # For final responses, use streaming if enabled
+    if stream and stream_callback:
+        final_response = ""
+        async for chunk in self.provider.chat_stream(
+            messages=messages,
+            tools=None,  # No tools for final response
+            model=self.model
+        ):
+            final_response += chunk
+            # Support both sync and async callbacks
+            if asyncio.iscoroutinefunction(stream_callback):
+                await stream_callback(chunk)
+            else:
+                stream_callback(chunk)
+    else:
+        final_response = response.content
+```
+
+**Key Features**:
+- `stream` parameter to enable/disable streaming
+- `stream_callback` parameter for handling chunks (supports both sync and async)
+- Streaming only used for final responses (no tool calls)
+- Tool call iterations still use non-streaming (required for parsing tool_calls)
+
+</details>
+
+<details>
+<summary><b>Click to expand: StreamSmoother Utility</b></summary>
+
+**File**: `mybot/utils/stream_smoother.py`
+
+A utility class that makes streaming output feel more natural by:
+- Buffering chunks until natural boundaries (punctuation, newlines)
+- Adding configurable delays between chunks
+- Respecting min/max chunk sizes
+
+```python
+class StreamSmoother:
+    def __init__(
+        self,
+        callback: Callable[[str], None],
+        min_chunk_chars: int = 15,
+        max_chunk_chars: int = 80,
+        base_delay: float = 0.03,
+        char_delay: float = 0.008,  # delay per character
+    ):
+        self.callback = callback
+        self.buffer = ""
+        self.min_chunk_chars = min_chunk_chars
+        self.max_chunk_chars = max_chunk_chars
+        self.base_delay = base_delay
+        self.char_delay = char_delay
+        self.boundary_re = re.compile(r'[.!?]\s+|[,;:]\s+|\n+')
+        self.first_flush = True
+    
+    async def push(self, text: str):
+        """Add text to buffer and flush when appropriate."""
+        self.buffer += text
+        
+        # Always flush on max chars
+        if len(self.buffer) >= self.max_chunk_chars:
+            await self._flush_at_boundary()
+            return
+        
+        # Flush at natural boundaries if we have enough content
+        if len(self.buffer) >= self.min_chunk_chars:
+            match = self.boundary_re.search(self.buffer)
+            if match:
+                await self._flush_at_boundary(match.end())
+    
+    async def _flush_at_boundary(self, pos: int = None):
+        """Flush buffered content at natural boundaries."""
+        if not self.buffer:
+            return
+        
+        # Determine what to flush
+        if pos is None:
+            to_flush = self.buffer
+            self.buffer = ""
+        else:
+            to_flush = self.buffer[:pos]
+            self.buffer = self.buffer[pos:]
+        
+        # First chunk is instant, then add natural delays
+        if not self.first_flush:
+            # Delay based on chunk length for natural feel
+            delay = self.base_delay + (len(to_flush) * self.char_delay)
+            await asyncio.sleep(min(delay, 0.15))  # cap at 150ms
+        
+        self.callback(to_flush)
+        self.first_flush = False
+    
+    async def flush_final(self):
+        """Flush any remaining buffer"""
+        if self.buffer:
+            if not self.first_flush:
+                await asyncio.sleep(self.base_delay)
+            self.callback(self.buffer)
+            self.buffer = ""
+```
+
+**Configuration Parameters**:
+- `min_chunk_chars`: Minimum characters before flushing at boundaries (default: 15)
+- `max_chunk_chars`: Maximum characters before forcing a flush (default: 80)
+- `base_delay`: Base delay between chunks in seconds (default: 0.03)
+- `char_delay`: Additional delay per character (default: 0.008)
+
+**How It Works**:
+1. Buffers incoming text chunks
+2. Flushes when:
+   - Buffer reaches `max_chunk_chars` (forced flush)
+   - Natural boundary found (punctuation, newlines) AND buffer >= `min_chunk_chars`
+3. Adds delays between chunks for natural feel
+4. First chunk appears instantly for responsiveness
+
+</details>
+
+<details>
+<summary><b>Click to expand: CLI Integration</b></summary>
+
+**File**: `mybot/cli.py`
+
+Updated CLI to use streaming with StreamSmoother:
+
+```python
+from mybot.utils.stream_smoother import StreamSmoother
+
+async def main():
+    # ... initialization code ...
+    
+    while True:
+        user_input = input("You: ").strip()
+        if user_input.lower() in ["quit", "exit"]:
+            break
+        if not user_input:
+            continue
+        
+        print("Agent: ", end="", flush=True)
+        
+        # Define callback to print chunks as they arrive
+        def print_chunk(chunk: str):
+            print(chunk, end="", flush=True)
+        
+        # Create StreamSmoother for smoother output
+        smoother = StreamSmoother(
+            callback=print_chunk,
+            min_chunk_chars=4,
+            max_chunk_chars=100,
+            base_delay=0.04,
+            char_delay=0.01,
+        )
+        
+        # Create async callback wrapper for StreamSmoother
+        async def smooth_callback(chunk: str):
+            await smoother.push(chunk)
+        
+        response = await agent.process_message(
+            user_input,
+            stream=True,
+            stream_callback=smooth_callback
+        )
+        
+        # Flush any remaining buffered content
+        await smoother.flush_final()
+        print()  # New line after response
+        print()
+```
+
+**Usage**:
+- Streaming is enabled by default in the CLI
+- Text appears in real-time as it's generated
+- Output is smoothed for natural reading experience
+- Tool calls still display normally (non-streaming)
+
+</details>
+
+<details>
+<summary><b>Click to expand: Example Usage</b></summary>
+
+**Before (Non-Streaming)**:
+```
+You: Write a short story about a robot
+Agent: [waits for complete response...]
+Agent: Once upon a time, there was a robot...
+```
+
+**After (Streaming)**:
+```
+You: Write a short story about a robot
+Agent: Once upon a time, there was a robot... [text appears progressively]
+```
+
+**With Tool Calls**:
+```
+You: Read the file data.txt and summarize it
+Agent:   [1] Tool: read_file
+         Args: {'path': 'data.txt'}
+  [1] Executing: read_file({'path': 'data.txt'})
+      Result: [file contents...]
+Agent: The file contains... [streaming response]
+```
+
+</details>
+
+<details>
+<summary><b>Click to expand: Customization</b></summary>
+
+**Adjust StreamSmoother Parameters**:
+
+For faster, more responsive output:
+```python
+smoother = StreamSmoother(
+    callback=print_chunk,
+    min_chunk_chars=4,
+    max_chunk_chars=100,
+    base_delay=0.02,  # Faster
+    char_delay=0.005,  # Less delay per char
+)
+```
+
+For slower, more deliberate output:
+```python
+smoother = StreamSmoother(
+    callback=print_chunk,
+    min_chunk_chars=15,
+    max_chunk_chars=80,
+    base_delay=0.05,  # Slower
+    char_delay=0.012,  # More delay per char
+)
+```
+
+**Disable Streaming**:
+```python
+response = await agent.process_message(
+    user_input,
+    stream=False  # Disable streaming
+)
+```
+
+</details>
 
 ---
 
